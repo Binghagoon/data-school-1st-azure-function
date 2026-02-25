@@ -7,6 +7,15 @@ import requests
 app = func.FunctionApp()
 
 
+@app.function_name(name="Main")
+@app.route(route="main", methods=["GET"])
+def main(req: func.HttpRequest) -> func.HttpResponse:
+    return func.HttpResponse(
+        "Welcome to the Azure Function App! Use the /crawl endpoint to crawl a target API.",
+        status_code=200,
+    )
+
+
 @app.function_name(name="CrawlApi")
 @app.route(route="crawl", methods=["GET"])
 def crawl_api(req: func.HttpRequest) -> func.HttpResponse:
