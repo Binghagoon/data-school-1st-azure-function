@@ -1,4 +1,4 @@
-# data-school-ist-azure-function
+# data-school-1st-azure-function
 
 Azure Function project for API crawling.
 
