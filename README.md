@@ -33,7 +33,13 @@ to crawl by default:
   "Values": {
     "AzureWebJobsStorage": "UseDevelopmentStorage=true",
     "FUNCTIONS_WORKER_RUNTIME": "python",
-    "TARGET_API_URL": "https://your-target-api.com/endpoint"
+    "TARGET_API_URL": "https://your-target-api.com/endpoint",
+    "POSTGRES_HOST": "your-server.postgres.database.azure.com",
+    "POSTGRES_DB": "your_database",
+    "POSTGRES_USER": "your_user",
+    "POSTGRES_PASSWORD": "your_password",
+    "POSTGRES_PORT": "5432",
+    "POSTGRES_SSLMODE": "require"
   }
 }
 ```
@@ -52,6 +58,9 @@ curl http://localhost:7071/api/crawl
 
 # Override the target URL via query parameter
 curl "http://localhost:7071/api/crawl?url=https://api.example.com/data"
+
+# Check PostgreSQL connectivity
+curl http://localhost:7071/api/db-health
 ```
 
 ## Deployment
@@ -66,7 +75,9 @@ func azure functionapp publish <YOUR_FUNCTION_APP_NAME>
 
 ```
 .
-├── function_app.py       # Main Azure Function app (HTTP trigger – CrawlApi)
+├── function_app.py       # Main Azure Function app (HTTP triggers – Main/CrawlApi/DbHealth)
+├── db/
+│   └── postgres_connector.py  # PostgreSQL connection helper
 ├── host.json             # Azure Functions host configuration
 ├── local.settings.json   # Local development settings (not committed to production)
 ├── requirements.txt      # Python dependencies

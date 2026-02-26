@@ -4,6 +4,8 @@ import os
 import azure.functions as func
 import requests
 
+from db.postgres_connector import check_connection
+
 app = func.FunctionApp()
 
 
@@ -53,3 +55,22 @@ def crawl_api(req: func.HttpRequest) -> func.HttpResponse:
         status_code=200,
         mimetype=content_type.split(";")[0].strip(),
     )
+
+
+@app.function_name(name="DbHealth")
+@app.route(route="db-health", methods=["GET"])
+def db_health(req: func.HttpRequest) -> func.HttpResponse:
+    """HTTP trigger function that checks PostgreSQL connectivity."""
+    try:
+        is_connected = check_connection()
+    except ValueError as exc:
+        logging.error("PostgreSQL configuration error: %s", exc)
+        return func.HttpResponse(str(exc), status_code=500)
+    except Exception as exc:
+        logging.error("PostgreSQL connection failed: %s", exc)
+        return func.HttpResponse(f"PostgreSQL connection failed: {exc}", status_code=502)
+
+    if not is_connected:
+        return func.HttpResponse("PostgreSQL connection check failed.", status_code=502)
+
+    return func.HttpResponse("PostgreSQL connection is healthy.", status_code=200)
