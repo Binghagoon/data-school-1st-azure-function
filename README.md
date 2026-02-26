@@ -75,7 +75,11 @@ func azure functionapp publish <YOUR_FUNCTION_APP_NAME>
 
 ```
 .
-├── function_app.py       # Main Azure Function app (HTTP triggers – Main/CrawlApi/DbHealth)
+├── function_app.py       # Function app bootstrap (blueprint registration)
+├── endpoints/
+│   ├── main.py           # Main endpoint
+│   ├── crawl.py          # CrawlApi endpoint
+│   └── db_health.py      # DbHealth endpoint
 ├── db/
 │   └── postgres_connector.py  # PostgreSQL connection helper
 ├── host.json             # Azure Functions host configuration

@@ -1,0 +1,46 @@
+import logging
+import os
+
+import azure.functions as func
+import requests
+
+bp = func.Blueprint()
+
+
+@bp.function_name(name="CrawlApi")
+@bp.route(route="crawl", methods=["GET"])
+def crawl_api(req: func.HttpRequest) -> func.HttpResponse:
+    """HTTP trigger function that crawls a target API and returns the result."""
+    logging.info("CrawlApi function triggered.")
+
+    target_url = req.params.get("url") or os.environ.get("TARGET_API_URL", "")
+
+    if not target_url:
+        return func.HttpResponse(
+            "Please provide a target URL via the 'url' query parameter or set the "
+            "TARGET_API_URL environment variable.",
+            status_code=400,
+        )
+
+    try:
+        response = requests.get(target_url, timeout=30)
+        response.raise_for_status()
+    except requests.exceptions.Timeout:
+        logging.error("Request to %s timed out.", target_url)
+        return func.HttpResponse(
+            f"Request to {target_url} timed out.",
+            status_code=504,
+        )
+    except requests.exceptions.RequestException as exc:
+        logging.error("Failed to crawl %s: %s", target_url, exc)
+        return func.HttpResponse(
+            f"Failed to crawl {target_url}: {exc}",
+            status_code=502,
+        )
+
+    content_type = response.headers.get("Content-Type", "application/octet-stream")
+    return func.HttpResponse(
+        response.text,
+        status_code=200,
+        mimetype=content_type.split(";")[0].strip(),
+    )
