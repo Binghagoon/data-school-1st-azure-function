@@ -39,7 +39,8 @@ to crawl by default:
     "POSTGRES_USER": "your_user",
     "POSTGRES_PASSWORD": "your_password",
     "POSTGRES_PORT": "5432",
-    "POSTGRES_SSLMODE": "require"
+    "POSTGRES_SSLMODE": "require",
+    "WEBHOOK_URL": "https://your-webhook-url.com/endpoint"
   }
 }
 ```
