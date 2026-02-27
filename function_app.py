@@ -1,8 +1,8 @@
 import azure.functions as func
-from endpoints.crawl import bp as crawl_bp
-from endpoints.db_health import bp as db_health_bp
-from endpoints.disasters import bp as disasters_bp
-from endpoints.main import bp as main_bp
+from blueprint.crawl import bp as crawl_bp
+from blueprint.db_health import bp as db_health_bp
+from blueprint.disasters import bp as disasters_bp
+from blueprint.main import bp as main_bp
 
 app = func.FunctionApp()
 
