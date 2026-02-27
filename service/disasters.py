@@ -7,6 +7,7 @@ import requests
 import json
 
 from db.postgres_connector import get_connection
+from db.sql_debug import render_sql_for_log
 
 
 URL = "https://www.safekorea.go.kr/idsiSFK/sfk/cs/sua/web/DisasterSmsList.do"
@@ -105,31 +106,30 @@ def save_disasters(disasters: list[dict[str, Any]]) -> None:
                 if id in ids:
                     print(f"Skipping existing disaster with MD101_SN={id}")
                     continue
-                # Example: Insert disaster data into a table (adjust columns as needed)
-                cursor.execute(
-                    """
+                query = """
                     INSERT INTO disaster_messages (md101_sn, dsstr_se_id, dsstr_se_nm, msg_se_cd, msg_cn, rcv_area_id, rcv_area_nm, emrgncy_step_id, emrgncy_step_nm, delete_at, register_id, updusr_id, rnum, creat_dt, regist_dt, modf_dt)
                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                    """,
-                    (
-                        disaster.get("MD101_SN"),
-                        disaster.get("DSSTR_SE_ID"),
-                        disaster.get("DSSTR_SE_NM"),
-                        disaster.get("MSG_SE_CD"),
-                        disaster.get("MSG_CN"),
-                        disaster.get("RCV_AREA_ID"),
-                        disaster.get("RCV_AREA_NM"),
-                        disaster.get("EMRGNCY_STEP_ID"),
-                        disaster.get("EMRGNCY_STEP_NM"),
-                        disaster.get("DELETE_AT", "N"),
-                        disaster.get("REGISTER_ID"),
-                        disaster.get("UPDUSR_ID"),
-                        disaster.get("RNUM"),
-                        disaster.get("CREAT_DT"),
-                        disaster.get("REGIST_DT"),
-                        disaster.get("MODF_DT"),
-                    ),
+                    """
+                params = (
+                    disaster.get("MD101_SN"),
+                    disaster.get("DSSTR_SE_ID"),
+                    disaster.get("DSSTR_SE_NM"),
+                    disaster.get("MSG_SE_CD"),
+                    disaster.get("MSG_CN"),
+                    disaster.get("RCV_AREA_ID"),
+                    disaster.get("RCV_AREA_NM"),
+                    disaster.get("EMRGNCY_STEP_ID"),
+                    disaster.get("EMRGNCY_STEP_NM"),
+                    disaster.get("DELETE_AT", "N"),
+                    disaster.get("REGISTER_ID"),
+                    disaster.get("UPDUSR_ID"),
+                    disaster.get("RNUM"),
+                    disaster.get("CREAT_DT"),
+                    disaster.get("REGIST_DT"),
+                    disaster.get("MODF_DT"),
                 )
+                print(render_sql_for_log(query, params))
+                cursor.execute(query, params)
                 saved_count += 1
         connection.commit()
     # Implement actual saving logic here (e.g., write to a database or file)
