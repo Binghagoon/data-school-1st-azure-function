@@ -518,7 +518,8 @@ def fetch_weather_and_air() -> list[tuple]:
 
             results.append((
                 dist["name"], temp, humi, wind, rain,
-                air["pm10"], air["pm25"], air["grade"]
+                air["pm10"], air["pm25"], air["grade"],
+                datetime.now()
             ))
             logger.info(
                 f"[환경] {dist['name']} | 기온:{temp} 습도:{humi} "
@@ -538,7 +539,7 @@ def save_environment(conn, data_list: list[tuple]):
         return
     sql = """
         INSERT INTO public.seoul_environment
-            (dist_name, temp, humi, wind, rain, pm10, pm25, air_grade)
+            (dist_name, temp, humi, wind, rain, pm10, pm25, air_grade, created_at)
         VALUES %s
     """
     with conn.cursor() as cur:
