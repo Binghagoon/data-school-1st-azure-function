@@ -2,7 +2,7 @@ import logging
 
 import azure.functions as func
 
-from db.postgres_connector import check_connection
+from db.postgres_connector import check_connection, get_connection_settings
 
 bp = func.Blueprint()
 
@@ -13,12 +13,23 @@ def db_health(req: func.HttpRequest) -> func.HttpResponse:
     """HTTP trigger function that checks PostgreSQL connectivity."""
     try:
         is_connected = check_connection()
+        connection_settings = get_connection_settings()
+        logging.info(
+            "PostgreSQL connection settings: host=%s, dbname=%s, user=%s, port=%s, sslmode=%s",
+            connection_settings["host"],
+            connection_settings["dbname"],
+            connection_settings["user"],
+            connection_settings["port"],
+            connection_settings["sslmode"],
+        )
     except ValueError as exc:
         logging.error("PostgreSQL configuration error: %s", exc)
         return func.HttpResponse(str(exc), status_code=500)
     except Exception as exc:
         logging.error("PostgreSQL connection failed: %s", exc)
-        return func.HttpResponse(f"PostgreSQL connection failed: {exc}", status_code=502)
+        return func.HttpResponse(
+            f"PostgreSQL connection failed: {exc}", status_code=502
+        )
 
     if not is_connected:
         return func.HttpResponse("PostgreSQL connection check failed.", status_code=502)
