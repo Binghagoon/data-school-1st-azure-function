@@ -1,4 +1,4 @@
-import azure.functions as func
+﻿import azure.functions as func
 from blueprint.crawl import bp as crawl_bp
 from blueprint.db_health import bp as db_health_bp
 from blueprint.disasters import bp as disasters_bp
@@ -749,7 +749,7 @@ def main_environment():
 # ═══════════════════════════════════════════
 
 if AZURE_FUNCTIONS_AVAILABLE:
-    app = func.FunctionApp()
+    # Reuse the same FunctionApp instance so blueprint routes remain registered.
 
     @app.timer_trigger(
         schedule="0 0 21 * * *",  # UTC 21:00 = KST 06:00, 하루 1회
@@ -782,3 +782,4 @@ if __name__ == "__main__":
         main_shelter()
     if target in ("env", "all"):
         main_environment()
+
