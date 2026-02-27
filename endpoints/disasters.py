@@ -17,7 +17,9 @@ def disasters(req: func.HttpRequest) -> func.HttpResponse:
     date = req.params.get("date")
     start = req.params.get("start")
     end = req.params.get("end")
-    save = req.params.get("save", "false").lower() == "true"
+    # save = req.params.get("save", "false").lower() == "true"
+    no_save = req.params.get("noSave", "false").lower() == "true"
+    save = not no_save
     area_id = req.params.get("areaId", "1100000000")
     page_size_raw = req.params.get("pageSize", "10")
 
