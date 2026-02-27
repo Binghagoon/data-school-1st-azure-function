@@ -505,30 +505,37 @@ def fetch_weather_and_air() -> list[tuple]:
             "nx":         dist["nx"],
             "ny":         dist["ny"],
         }
-        try:
-            res    = requests.get(WEATHER_URL, params=params, timeout=10)
-            items  = res.json()["response"]["body"]["items"]["item"]
-            w_data = {i["category"]: i["obsrValue"] for i in items}
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                res    = requests.get(WEATHER_URL, params=params, timeout=10)
+                items  = res.json()["response"]["body"]["items"]["item"]
+                w_data = {i["category"]: i["obsrValue"] for i in items}
 
-            temp = float(w_data.get("T1H", 0))
-            humi = float(w_data.get("REH", 0))
-            wind = float(w_data.get("WSD", 0))
-            rain = float(w_data.get("RN1", 0))
-            air  = air_map.get(dist["name"], {"pm10": 0.0, "pm25": 0.0, "grade": "데이터없음"})
+                temp = float(w_data.get("T1H", 0))
+                humi = float(w_data.get("REH", 0))
+                wind = float(w_data.get("WSD", 0))
+                rain = float(w_data.get("RN1", 0))
+                air  = air_map.get(dist["name"], {"pm10": 0.0, "pm25": 0.0, "grade": "데이터없음"})
 
-            results.append((
-                dist["name"], temp, humi, wind, rain,
-                air["pm10"], air["pm25"], air["grade"],
-                datetime.now()
-            ))
-            logger.info(
-                f"[환경] {dist['name']} | 기온:{temp} 습도:{humi} "
-                f"풍속:{wind} 강수:{rain} PM10:{air['pm10']} PM2.5:{air['pm25']}"
-            )
-            time.sleep(0.05)  # API 부하 방지
+                results.append((
+                    dist["name"], temp, humi, wind, rain,
+                    air["pm10"], air["pm25"], air["grade"],
+                    datetime.now()
+                ))
+                logger.info(
+                    f"[환경] {dist['name']} | 기온:{temp} 습도:{humi} "
+                    f"풍속:{wind} 강수:{rain} PM10:{air['pm10']} PM2.5:{air['pm25']}"
+                )
+                time.sleep(0.05)  # API 부하 방지
+                break  # 성공 시 재시도 루프 종료
 
-        except Exception as e:
-            logger.error(f"[환경] {dist['name']} 수집 실패: {e}")
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    logger.warning(f"[환경] {dist['name']} 재시도 {attempt+1}/{max_retries}: {e}")
+                    time.sleep(1)
+                else:
+                    logger.error(f"[환경] {dist['name']} 수집 실패 (최대 재시도 초과): {e}")
 
     return results
 
