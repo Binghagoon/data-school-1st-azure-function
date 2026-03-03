@@ -1,36 +1,17 @@
-"""
-서울시 데이터 자동 수집 통합 스크립트
-- Azure Functions Timer Trigger 2개로 운영
+import azure.functions as func
+from endpoints.crawl import bp as crawl_bp
+from endpoints.db_health import bp as db_health_bp
+from endpoints.disasters import bp as disasters_bp
+from endpoints.main import bp as main_bp
 
-[타이머 구성]
-- shelter_timer : 매일 KST 06:00 (UTC 21:00) → 무더위 + 한파 쉼터
-- env_timer     : 매시간 정각                  → 기후(기온/습도/풍속/강수) + 미세먼지
+app = func.FunctionApp()
 
-[쉼터 동작 방식]
-- 신규 데이터           → INSERT
-- 변경된 데이터         → UPDATE (변경 필드 로그 출력)
-- API에서 사라진 데이터 → is_deleted = true (소프트 삭제)
+app.register_blueprint(main_bp)
+app.register_blueprint(crawl_bp)
+app.register_blueprint(db_health_bp)
+app.register_blueprint(disasters_bp)
 
-[무더위 쉼터 필터]
-- 이용가능인원 NULL 또는 0 제외
-
-[한파 쉼터 필터]
-- 사용여부 = 'N' 제외
-- 이용가능인원 NULL 또는 0 제외
-
-[기후/미세먼지]
-- 서울 25개 구 기상청 초단기실황 + 서울시 미세먼지 API
-- seoul_environment 테이블에 INSERT (매시간 누적)
-- 비동기 병렬 수집 (aiohttp)
-- 이상값 검증, 멱등성 보장 (ON CONFLICT DO NOTHING)
-- 수집 결과 collection_log 테이블에 기록
-- 측정소 점검중 시 pm10/pm25 = NULL, air_grade = "점검중" 저장
-
-[필요 환경변수]
-- POSTGRES_HOST, POSTGRES_PORT, POSTGRES_DB, POSTGRES_USER, POSTGRES_PASSWORD
-- HOT_SHELTER_API, COLD_SHELTER_API
-- WEATHER_API_KEY, AIR_API_KEY
-"""
+# -----------------------------------------------------------------------------------------------
 
 import os
 import time
