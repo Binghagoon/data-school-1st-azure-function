@@ -1,20 +1,41 @@
-import azure.functions as func
-from endpoints.crawl import bp as crawl_bp
-from endpoints.db_health import bp as db_health_bp
-from endpoints.disasters import bp as disasters_bp
-from endpoints.main import bp as main_bp
+"""
+서울시 데이터 자동 수집 통합 스크립트
+- Azure Functions Timer Trigger 2개로 운영
 
-app = func.FunctionApp()
+[타이머 구성]
+- shelter_timer : 매일 KST 06:00 (UTC 21:00) → 무더위 + 한파 쉼터
+- env_timer     : 매시간 정각                  → 기후(기온/습도/풍속/강수) + 미세먼지
 
-app.register_blueprint(main_bp)
-app.register_blueprint(crawl_bp)
-app.register_blueprint(db_health_bp)
-app.register_blueprint(disasters_bp)
+[쉼터 동작 방식]
+- 신규 데이터           → INSERT
+- 변경된 데이터         → UPDATE (변경 필드 로그 출력)
+- API에서 사라진 데이터 → is_deleted = true (소프트 삭제)
 
-# ------------------------------------------------------
+[무더위 쉼터 필터]
+- 이용가능인원 NULL 또는 0 제외
+
+[한파 쉼터 필터]
+- 사용여부 = 'N' 제외
+- 이용가능인원 NULL 또는 0 제외
+
+[기후/미세먼지]
+- 서울 25개 구 기상청 초단기실황 + 서울시 미세먼지 API
+- seoul_environment 테이블에 INSERT (매시간 누적)
+- 비동기 병렬 수집 (aiohttp)
+- 이상값 검증, 멱등성 보장 (ON CONFLICT DO NOTHING)
+- 수집 결과 collection_log 테이블에 기록
+- 측정소 점검중 시 pm10/pm25 = NULL, air_grade = "점검중" 저장
+
+[필요 환경변수]
+- POSTGRES_HOST, POSTGRES_PORT, POSTGRES_DB, POSTGRES_USER, POSTGRES_PASSWORD
+- HOT_SHELTER_API, COLD_SHELTER_API
+- WEATHER_API_KEY, AIR_API_KEY
+"""
 
 import os
 import time
+import asyncio
+import aiohttp
 import requests
 import psycopg2
 from psycopg2.extras import execute_values
@@ -70,7 +91,7 @@ SEOUL_DISTRICTS = [
     {'name': '구로구',   'nx': 58, 'ny': 125}, {'name': '금천구',   'nx': 59, 'ny': 124},
     {'name': '노원구',   'nx': 61, 'ny': 129}, {'name': '도봉구',   'nx': 61, 'ny': 129},
     {'name': '동대문구', 'nx': 61, 'ny': 127}, {'name': '동작구',   'nx': 59, 'ny': 125},
-    {'name': '마포구',   'nx': 59, 'ny': 127}, {'name': '서대문구', 'nx': 59, 'ny': 127},
+    {'name': '마포구',   'nx': 59, 'ny': 127}, {'name': '서대문구', 'nx': 59, 'ny': 128},
     {'name': '서초구',   'nx': 61, 'ny': 125}, {'name': '성동구',   'nx': 61, 'ny': 127},
     {'name': '성북구',   'nx': 61, 'ny': 127}, {'name': '송파구',   'nx': 62, 'ny': 126},
     {'name': '양천구',   'nx': 58, 'ny': 126}, {'name': '영등포구', 'nx': 58, 'ny': 126},
@@ -123,7 +144,23 @@ def clean_numeric(val):
     except (InvalidOperation, TypeError):
         return None
 
-def fetch_api(api_url: str, result_key: str, label: str) -> list[dict]:
+def parse_air_value(val):
+    """
+    미세먼지 값 파싱
+    - 점검중, 빈값, 특수문자 등 비정상 값은 None 반환
+    - 정상 수치면 float 반환
+    """
+    if val is None:
+        return None
+    v = str(val).strip()
+    if v in ("", "점검중", "null", "NULL", "-", "N/A"):
+        return None
+    try:
+        return float(v)
+    except ValueError:
+        return None
+
+def fetch_api(api_url: str, result_key: str, label: str) -> list:
     """페이지네이션 포함 API 전체 수신 (쉼터용 공통)"""
     all_rows = []
     start    = 1
@@ -152,6 +189,36 @@ def fetch_api(api_url: str, result_key: str, label: str) -> list[dict]:
 
 def get_db_conn():
     return psycopg2.connect(**DB_CONFIG)
+
+def setup_collection_log(conn):
+    """collection_log 테이블 없으면 자동 생성"""
+    with conn.cursor() as cur:
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS public.collection_log (
+                id               SERIAL PRIMARY KEY,
+                category         VARCHAR(50),
+                status           VARCHAR(20),
+                collected_count  INTEGER,
+                duration_sec     FLOAT,
+                logged_at        TIMESTAMP DEFAULT NOW()
+            )
+        """)
+    conn.commit()
+
+def log_collection_result(conn, category: str, count: int, duration: float, status: str = "SUCCESS"):
+    """수집 결과를 DB에 기록하여 파이프라인 운영 상태 모니터링"""
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO public.collection_log
+                    (category, status, collected_count, duration_sec)
+                VALUES (%s, %s, %s, %s)
+            """, (category, status, count, duration))
+        conn.commit()
+        logger.info(f"[LOG] {category} | {status} | {count}건 | {duration}초")
+    except Exception as e:
+        logger.error(f"[LOG] 이력 기록 실패: {e}")
+        conn.rollback()
 
 
 # ═══════════════════════════════════════════
@@ -197,7 +264,7 @@ def setup_heat_shelter(conn):
     conn.commit()
     logger.info("[무더위] 초기 컬럼 및 제약 조건 설정 완료")
 
-def upsert_heat_shelters(conn, rows: list[dict]):
+def upsert_heat_shelters(conn, rows: list):
     with conn.cursor() as cur:
         cur.execute("""
             SELECT area_cd, shelter_name, road_addr, facility_area, capacity, remark
@@ -268,7 +335,7 @@ def upsert_heat_shelters(conn, rows: list[dict]):
 
     logger.info(f"[무더위] 신규: {new_count}건 | 변경: {changed_count}건 | 전체 UPSERT: {len(values)}건")
 
-def soft_delete_heat(conn, current_keys: list[tuple]):
+def soft_delete_heat(conn, current_keys: list):
     with conn.cursor() as cur:
         cur.execute("SELECT area_cd, shelter_name FROM public.heat_shelter WHERE is_deleted = false")
         db_keys = set(tuple(r) for r in cur.fetchall())
@@ -308,7 +375,6 @@ def run_heat_shelter(conn):
 
 def parse_cold_row(r: dict) -> tuple:
     return (
-        clean_int(r.get("NO")),
         clean_str(r.get("FACILITY_TYPE1"), 50),
         clean_str(r.get("FACILITY_TYPE2"), 50),
         clean_str(r.get("RESTAREA_NM"), 100),
@@ -336,7 +402,7 @@ def setup_cold_shelter(conn):
                 SELECT 1 FROM pg_constraint WHERE conname = 'cold_shelter_unique'
             ) THEN
                 ALTER TABLE public.cold_shelter
-                ADD CONSTRAINT cold_shelter_unique UNIQUE (no, shelter_name);
+                ADD CONSTRAINT cold_shelter_unique UNIQUE (shelter_name);
             END IF;
         END $$;"""
     ]
@@ -346,13 +412,13 @@ def setup_cold_shelter(conn):
     conn.commit()
     logger.info("[한파] 초기 컬럼 및 제약 조건 설정 완료")
 
-def upsert_cold_shelters(conn, rows: list[dict]):
+def upsert_cold_shelters(conn, rows: list):
     with conn.cursor() as cur:
         cur.execute("""
-            SELECT no, shelter_name, road_addr, facility_area, capacity, remark
+            SELECT shelter_name, road_addr, facility_area, capacity, remark
             FROM public.cold_shelter WHERE is_deleted = false
         """)
-        before = {(r[0], r[1]): r[2:] for r in cur.fetchall()}
+        before = {r[0]: r[1:] for r in cur.fetchall()}
 
     values = []
     skipped = filtered = 0
@@ -376,11 +442,11 @@ def upsert_cold_shelters(conn, rows: list[dict]):
 
     sql = """
         INSERT INTO public.cold_shelter (
-            no, facility_type1, facility_type2, shelter_name,
+            facility_type1, facility_type2, shelter_name,
             road_addr, lot_addr, facility_area, capacity, remark,
             lon, lat, coord_x, coord_y, use_yn, use_type, updated_at
         ) VALUES %s
-        ON CONFLICT (no, shelter_name)
+        ON CONFLICT (shelter_name)
         DO UPDATE SET
             facility_type1 = EXCLUDED.facility_type1,
             facility_type2 = EXCLUDED.facility_type2,
@@ -403,43 +469,44 @@ def upsert_cold_shelters(conn, rows: list[dict]):
 
     with conn.cursor() as cur:
         cur.execute("""
-            SELECT no, shelter_name, road_addr, facility_area, capacity, remark
+            SELECT shelter_name, road_addr, facility_area, capacity, remark
             FROM public.cold_shelter WHERE is_deleted = false
         """)
-        after = {(r[0], r[1]): r[2:] for r in cur.fetchall()}
+        after = {r[0]: r[1:] for r in cur.fetchall()}
 
     new_count = changed_count = 0
-    for key, after_val in after.items():
-        if key not in before:
-            logger.info(f"[한파][NEW] {key[1]}")
+    for name, after_val in after.items():
+        if name not in before:
+            logger.info(f"[한파][NEW] {name}")
             new_count += 1
-        elif before[key] != after_val:
-            logger.info(f"[한파][UPDATE] {key[1]}")
+        elif before[name] != after_val:
+            logger.info(f"[한파][UPDATE] {name}")
             for i, field in enumerate(["road_addr", "facility_area", "capacity", "remark"]):
-                if before[key][i] != after_val[i]:
-                    logger.info(f"  - {field}: '{before[key][i]}' → '{after_val[i]}'")
+                if before[name][i] != after_val[i]:
+                    logger.info(f"  - {field}: '{before[name][i]}' → '{after_val[i]}'")
             changed_count += 1
 
     logger.info(f"[한파] 신규: {new_count}건 | 변경: {changed_count}건 | 전체 UPSERT: {len(values)}건")
 
-def soft_delete_cold(conn, current_keys: list[tuple]):
+def soft_delete_cold(conn, current_names: list):
+    """shelter_name 기준으로 소프트 삭제 (no 컬럼 없으므로 이름만 사용)"""
     with conn.cursor() as cur:
-        cur.execute("SELECT no, shelter_name FROM public.cold_shelter WHERE is_deleted = false")
-        db_keys = set(tuple(r) for r in cur.fetchall())
+        cur.execute("SELECT shelter_name FROM public.cold_shelter WHERE is_deleted = false")
+        db_names = set(r[0] for r in cur.fetchall())
 
-    deleted_keys = db_keys - set(current_keys)
-    if not deleted_keys:
+    deleted_names = db_names - set(current_names)
+    if not deleted_names:
         logger.info("[한파] 삭제된 쉼터 없음")
         return
     with conn.cursor() as cur:
-        for key in deleted_keys:
-            logger.info(f"[한파][DELETE] {key[1]}")
+        for name in deleted_names:
+            logger.info(f"[한파][DELETE] {name}")
             cur.execute(
                 "UPDATE public.cold_shelter SET is_deleted = true "
-                "WHERE no = %s AND shelter_name = %s", key
+                "WHERE shelter_name = %s", (name,)
             )
     conn.commit()
-    logger.info(f"[한파] 총 {len(deleted_keys)}건 소프트 삭제 완료")
+    logger.info(f"[한파] 총 {len(deleted_names)}건 소프트 삭제 완료")
 
 def run_cold_shelter(conn):
     logger.info("───────────────────────────────────────────")
@@ -451,13 +518,13 @@ def run_cold_shelter(conn):
         logger.warning("[한파] 수신된 데이터 없음, 건너뜀")
         return
     upsert_cold_shelters(conn, rows)
-    current_keys = [
-        (clean_int(r.get("NO")), clean_str(r.get("RESTAREA_NM"), 100))
+    current_names = [
+        clean_str(r.get("RESTAREA_NM"), 100)
         for r in rows
         if clean_str(r.get("USE_YN")) != "N"
         and clean_int(r.get("UTZTN_PSBLTY_NOPE")) and clean_int(r.get("UTZTN_PSBLTY_NOPE")) > 0
     ]
-    soft_delete_cold(conn, current_keys)
+    soft_delete_cold(conn, current_names)
     logger.info("[한파 쉼터] 갱신 완료")
 
 
@@ -472,82 +539,131 @@ def get_base_time_and_date():
     return target.strftime("%Y%m%d"), target.strftime("%H00")
 
 def fetch_air_quality() -> dict:
-    """서울시 미세먼지 → {구이름: {pm10, pm25, grade}} 딕셔너리"""
+    """
+    서울시 미세먼지 → {구이름: {pm10, pm25, grade}} 딕셔너리
+    - 측정소 점검중이면 pm10/pm25 = None, grade = "점검중" 으로 저장
+    - 앱에서 air_grade = "점검중" 이면 "현재 측정소 점검중" 메시지 표시
+    """
     air_map = {}
     try:
         res  = requests.get(AIR_API_URL, timeout=10)
         rows = res.json().get("ListAirQualityByDistrictService", {}).get("row", [])
         for row in rows:
-            name  = row.get("MSRSTN_NM", "")
-            pm10  = float(row["PM"])  if str(row.get("PM",  "")).replace(".", "", 1).isdigit() else 0.0
-            pm25  = float(row["FPM"]) if str(row.get("FPM", "")).replace(".", "", 1).isdigit() else 0.0
-            grade = row.get("CAI_GRD") or "정보없음"
+            name    = row.get("MSRSTN_NM", "")
+            pm10    = parse_air_value(row.get("PM"))
+            pm25    = parse_air_value(row.get("FPM"))
+            raw_pm  = str(row.get("PM", "")).strip()
+
+            # 점검중 판단: PM 값이 "점검중" 이거나 CAI_GRD가 비어있으면
+            if raw_pm == "점검중" or not row.get("CAI_GRD"):
+                grade = "점검중"
+                logger.warning(f"[환경] {name} 측정소 점검중 → pm10/pm25 NULL 저장")
+            else:
+                grade = row.get("CAI_GRD") or "정보없음"
+
             air_map[name] = {"pm10": pm10, "pm25": pm25, "grade": grade}
+
         logger.info(f"[환경] 미세먼지 {len(air_map)}개 구 수신 완료")
     except Exception as e:
         logger.error(f"[환경] 미세먼지 수집 실패: {e}")
     return air_map
 
-def fetch_weather_and_air() -> list[tuple]:
-    """25개 구 기상 + 미세먼지 통합 수집"""
-    base_date, base_time = get_base_time_and_date()
-    air_map = fetch_air_quality()
-    results = []
+async def fetch_single_district(session, dist, base_date, base_time, air_map):
+    """개별 구의 기상 데이터를 비동기로 수집 (재시도 3회 + 이상값 검증)"""
+    params = {
+        "serviceKey": WEATHER_KEY,
+        "dataType":   "JSON",
+        "base_date":  base_date,
+        "base_time":  base_time,
+        "nx":         dist["nx"],
+        "ny":         dist["ny"],
+    }
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            async with session.get(WEATHER_URL, params=params, timeout=aiohttp.ClientTimeout(total=10)) as res:
+                if res.status != 200:
+                    raise ValueError(f"HTTP {res.status}")
+                data  = await res.json(content_type=None)
+                items = data.get("response", {}).get("body", {}).get("items", {}).get("item", [])
+                if not items:
+                    raise ValueError("빈 응답")
 
-    logger.info(f"[환경] 기상 수집 시작 (기준: {base_date} {base_time})")
-
-    for dist in SEOUL_DISTRICTS:
-        params = {
-            "serviceKey": WEATHER_KEY,
-            "dataType":   "JSON",
-            "base_date":  base_date,
-            "base_time":  base_time,
-            "nx":         dist["nx"],
-            "ny":         dist["ny"],
-        }
-        max_retries = 3
-        for attempt in range(max_retries):
-            try:
-                res    = requests.get(WEATHER_URL, params=params, timeout=10)
-                items  = res.json()["response"]["body"]["items"]["item"]
                 w_data = {i["category"]: i["obsrValue"] for i in items}
+                temp   = float(w_data.get("T1H", 0))
+                humi   = float(w_data.get("REH", 0))
+                wind   = float(w_data.get("WSD", 0))
+                rain   = float(w_data.get("RN1", 0))
 
-                temp = float(w_data.get("T1H", 0))
-                humi = float(w_data.get("REH", 0))
-                wind = float(w_data.get("WSD", 0))
-                rain = float(w_data.get("RN1", 0))
-                air  = air_map.get(dist["name"], {"pm10": 0.0, "pm25": 0.0, "grade": "데이터없음"})
+                # 미세먼지: 점검중이면 None, grade는 "점검중" 그대로 사용
+                air = air_map.get(dist["name"], {"pm10": None, "pm25": None, "grade": "데이터없음"})
 
-                results.append((
+                # 이상값 검증
+                if not (-30 <= temp <= 50):
+                    logger.warning(f"[검증] {dist['name']} 기온 이상값: {temp}℃ → 스킵")
+                    return None
+                if not (0 <= humi <= 100):
+                    logger.warning(f"[검증] {dist['name']} 습도 이상값: {humi}% → 스킵")
+                    return None
+                if not (0 <= wind <= 50):
+                    logger.warning(f"[검증] {dist['name']} 풍속 이상값: {wind}m/s → 스킵")
+                    return None
+
+                logger.info(
+                    f"[환경] {dist['name']} | 기온:{temp} 습도:{humi} "
+                    f"풍속:{wind} 강수:{rain} "
+                    f"PM10:{air['pm10']} PM2.5:{air['pm25']} 등급:{air['grade']}"
+                )
+                return (
                     dist["name"], temp, humi, wind, rain,
                     air["pm10"], air["pm25"], air["grade"],
                     datetime.now()
-                ))
-                logger.info(
-                    f"[환경] {dist['name']} | 기온:{temp} 습도:{humi} "
-                    f"풍속:{wind} 강수:{rain} PM10:{air['pm10']} PM2.5:{air['pm25']}"
                 )
-                time.sleep(0.05)  # API 부하 방지
-                break  # 성공 시 재시도 루프 종료
+        except Exception as e:
+            if attempt < max_retries - 1:
+                logger.warning(f"[환경] {dist['name']} 재시도 {attempt+1}/{max_retries}: {e}")
+                await asyncio.sleep(1)
+            else:
+                logger.error(f"[환경] {dist['name']} 최종 실패 (3회 재시도 초과): {e}")
+    return None
 
-            except Exception as e:
-                if attempt < max_retries - 1:
-                    logger.warning(f"[환경] {dist['name']} 재시도 {attempt+1}/{max_retries}: {e}")
-                    time.sleep(1)
-                else:
-                    logger.error(f"[환경] {dist['name']} 수집 실패 (최대 재시도 초과): {e}")
+async def fetch_all_districts_async() -> list:
+    """25개 구 전체를 비동기 병렬로 수집"""
+    base_date, base_time = get_base_time_and_date()
+    air_map = fetch_air_quality()
 
-    return results
+    logger.info(f"[환경] 기상 수집 시작 (기준: {base_date} {base_time})")
 
-def save_environment(conn, data_list: list[tuple]):
-    """seoul_environment 테이블에 INSERT (매시간 누적 저장)"""
+    async with aiohttp.ClientSession() as session:
+        tasks = [
+            fetch_single_district(session, dist, base_date, base_time, air_map)
+            for dist in SEOUL_DISTRICTS
+        ]
+        results = await asyncio.gather(*tasks)
+
+    final_data = [r for r in results if r is not None]
+    return final_data
+
+def save_environment(conn, data_list: list):
+    """
+    중복 데이터는 무시하고 저장 (멱등성 보장)
+    - pm10/pm25는 NULL 허용 (점검중 대응)
+    """
     if not data_list:
         logger.warning("[환경] 저장할 데이터 없음")
         return
+
+    # pm10, pm25 NULL 허용으로 컬럼 변경 (최초 1회만 실행됨)
+    with conn.cursor() as cur:
+        cur.execute("ALTER TABLE public.seoul_environment ALTER COLUMN pm10 DROP NOT NULL")
+        cur.execute("ALTER TABLE public.seoul_environment ALTER COLUMN pm25 DROP NOT NULL")
+    conn.commit()
+
     sql = """
         INSERT INTO public.seoul_environment
             (dist_name, temp, humi, wind, rain, pm10, pm25, air_grade, created_at)
         VALUES %s
+        ON CONFLICT (dist_name, created_at) DO NOTHING
     """
     with conn.cursor() as cur:
         execute_values(cur, sql, data_list)
@@ -558,9 +674,28 @@ def run_environment(conn):
     logger.info("───────────────────────────────────────────")
     logger.info("  [기후 + 미세먼지] 수집 시작")
     logger.info("───────────────────────────────────────────")
-    data = fetch_weather_and_air()
+    setup_collection_log(conn)
+    start_time = time.time()
+
+    # 비동기 병렬 수집
+    data = asyncio.run(fetch_all_districts_async())
+
+    duration = round(time.time() - start_time, 2)
+    count    = len(data)
+
+    # 상태 판별 (25개 구 기준)
+    if count == 0:
+        status = "FAIL"
+    elif count < len(SEOUL_DISTRICTS):
+        status = "PARTIAL"
+        logger.warning(f"[환경] 일부 누락: {count}/{len(SEOUL_DISTRICTS)}개 구 수집됨")
+    else:
+        status = "SUCCESS"
+        logger.info(f"[환경] 전체 {count}/{len(SEOUL_DISTRICTS)}개 구 정상 수집")
+
     save_environment(conn, data)
-    logger.info("[기후 + 미세먼지] 수집 완료")
+    log_collection_result(conn, "environment", count, duration, status)
+    logger.info(f"[기후 + 미세먼지] 수집 완료 ({count}건, {duration}초 소요)")
 
 
 # ═══════════════════════════════════════════
@@ -651,7 +786,7 @@ if AZURE_FUNCTIONS_AVAILABLE:
     app = func.FunctionApp()
 
     @app.timer_trigger(
-        schedule="0 0 21 * * *",   # UTC 21:00 = KST 06:00, 하루 1회
+        schedule="0 0 21 * * *",
         arg_name="shelter_timer",
         run_on_startup=False
     )
@@ -659,7 +794,7 @@ if AZURE_FUNCTIONS_AVAILABLE:
         main_shelter()
 
     @app.timer_trigger(
-        schedule="0 0 * * * *",    # 매시간 0분 0초, 1시간마다
+        schedule="0 0 * * * *",
         arg_name="env_timer",
         run_on_startup=False
     )
