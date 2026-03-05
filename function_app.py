@@ -20,7 +20,7 @@ app.register_blueprint(disasters_bp)
 #   - Silver : 이용불가(USE_YN=N, 인원0) 제외 / 중복제거 / UPSERT / 소프트삭제
 #   - Gold   : shelter_summary 갱신 (area_cd 없음)
 #
-# [환경] 매시간 정각 실행
+# [환경] 매시간 15분 실행
 #   - Bronze : 기상 + 미세먼지 원본 저장
 #   - Silver : 이상값 검증(범위체크) / 음수강수→0 보정 / measured_at 변환
 #   - Gold   : 시간별/일별 집계 UPSERT
@@ -1040,7 +1040,7 @@ def main_forecast():
 # ═══════════════════════════════════════════
 # Azure Functions Timer Triggers
 # shelter_timer  : 매일 KST 06:00 (UTC 21:00)
-# env_timer      : 매시간 정각
+# env_timer      : 매시간 15분
 # forecast_timer : 매일 KST 07:00 (UTC 22:00)
 # ═══════════════════════════════════════════
 
