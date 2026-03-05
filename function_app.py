@@ -6,6 +6,7 @@ from blueprint.db_health import bp as db_health_bp
 from blueprint.disasters import bp as disasters_bp
 from blueprint.main import bp as main_bp
 from service.environment_sync import main_environment
+from service.hello_service import print_hello
 from service.shelter_sync import main_shelter
 
 app = func.FunctionApp()
@@ -31,6 +32,15 @@ def shelter_timer(shelter_timer: func.TimerRequest) -> None:
 )
 def env_timer(env_timer: func.TimerRequest) -> None:
     main_environment()
+
+
+@app.timer_trigger(
+    schedule="*/1 * * * * *",  # every second
+    arg_name="hello_timer",
+    run_on_startup=False,
+)
+def hello_timer(hello_timer: func.TimerRequest) -> None:
+    print_hello()
 
 
 if __name__ == "__main__":
