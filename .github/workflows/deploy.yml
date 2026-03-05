@@ -31,10 +31,13 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
 
       - name: Validate publish profile secret
-        if: ${{ secrets.AZURE_FUNCTIONAPP_PUBLISH_PROFILE == '' }}
+        env:
+          AZURE_FUNCTIONAPP_PUBLISH_PROFILE: ${{ secrets.AZURE_FUNCTIONAPP_PUBLISH_PROFILE }}
         run: |
-          echo "AZURE_FUNCTIONAPP_PUBLISH_PROFILE secret is missing."
-          exit 1
+          if [ -z "$AZURE_FUNCTIONAPP_PUBLISH_PROFILE" ]; then
+            echo "AZURE_FUNCTIONAPP_PUBLISH_PROFILE secret is missing."
+            exit 1
+          fi
 
       - name: Install dependencies
         run: |
