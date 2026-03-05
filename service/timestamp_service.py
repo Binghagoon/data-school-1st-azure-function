@@ -13,7 +13,12 @@ def append_timestamp(data: dict[str, str] | None = None) -> str:
 
 
 def list_timestamps() -> dict[str, str | list[str]]:
+    elapsed_seconds = int(
+        (datetime.now(timezone.utc) - datetime.fromisoformat(start_time)).total_seconds()
+    )
     return {
         "start_time": start_time,
         "timestamps": list(_timestamps),
+        "timestamp_count": len(_timestamps),
+        "elapsed_seconds": elapsed_seconds,
     }
