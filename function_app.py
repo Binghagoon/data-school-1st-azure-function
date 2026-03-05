@@ -5,6 +5,7 @@ import azure.functions as func
 from blueprint.db_health import bp as db_health_bp
 from blueprint.disasters import bp as disasters_bp
 from blueprint.main import bp as main_bp
+from blueprint.timestamps import bp as timestamps_bp
 from service.environment_sync import main_environment
 from service.hello_service import print_hello
 from service.shelter_sync import main_shelter
@@ -14,6 +15,7 @@ app = func.FunctionApp()
 app.register_blueprint(main_bp)
 app.register_blueprint(db_health_bp)
 app.register_blueprint(disasters_bp)
+app.register_blueprint(timestamps_bp)
 
 
 @app.timer_trigger(
