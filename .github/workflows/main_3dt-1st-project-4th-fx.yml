@@ -5,9 +5,6 @@
 name: Build and deploy Python project to Azure Function App - 3dt-1st-project-4th-fx
 
 on:
-  push:
-    branches:
-      - main
   workflow_dispatch:
 
 env:
