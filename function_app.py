@@ -10,7 +10,7 @@ from service.environment_sync import main_environment
 from service.hello_service import print_hello
 from service.shelter_sync import main_shelter
 
-app = func.FunctionApp()
+app = func.FunctionApp(http_auth_level=func.AuthLevel.ANONYMOUS)
 
 app.register_blueprint(main_bp)
 app.register_blueprint(db_health_bp)

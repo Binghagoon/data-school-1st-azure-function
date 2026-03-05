@@ -2,7 +2,7 @@ name: Deploy Azure Functions (Python v2)
 
 on:
   push:
-    branches: [ "main" ]
+    branches: ["main"]
   workflow_dispatch:
 
 jobs:
