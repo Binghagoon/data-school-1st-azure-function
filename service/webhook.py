@@ -117,8 +117,11 @@ def send_webhook(type: str, title: str, facts: dict[str, str], message: str) -> 
 
     body = build_body(type, title, facts, message)
     headers = {"Content-Type": "application/json"}
-    response = requests.post(URL, json=body, headers=headers)
-    response.raise_for_status()
+    import json
+
+    print("Sending webhook with body:", json.dumps(body, ensure_ascii=False, indent=2))
+    # response = requests.post(URL, json=body, headers=headers)
+    # response.raise_for_status()
 
 
 if __name__ == "__main__":

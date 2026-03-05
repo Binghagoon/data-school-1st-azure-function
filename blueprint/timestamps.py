@@ -10,7 +10,7 @@ bp = func.Blueprint()
 @bp.function_name(name="TimestampList")
 @bp.route(route="timestamps", methods=["GET"])
 def timestamp_list(req: func.HttpRequest) -> func.HttpResponse:
-    body = json.dumps({"timestamps": list_timestamps()})
+    body = json.dumps(list_timestamps())
     return func.HttpResponse(body, status_code=200, mimetype="application/json")
 
 
