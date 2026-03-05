@@ -2,7 +2,6 @@
 
 import azure.functions as func
 
-from blueprint.crawl import bp as crawl_bp
 from blueprint.db_health import bp as db_health_bp
 from blueprint.disasters import bp as disasters_bp
 from blueprint.main import bp as main_bp
@@ -12,7 +11,6 @@ from service.shelter_sync import main_shelter
 app = func.FunctionApp()
 
 app.register_blueprint(main_bp)
-app.register_blueprint(crawl_bp)
 app.register_blueprint(db_health_bp)
 app.register_blueprint(disasters_bp)
 

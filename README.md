@@ -1,12 +1,12 @@
 # data-school-1st-azure-function
 
-Azure Function project for API crawling.
+Azure Function project for disaster and data sync workflows.
 
 ## Overview
 
-This project provides an Azure Function (Python v2 programming model) that crawls
-a target API endpoint and returns the response. The function is exposed as an HTTP
-trigger at the route `GET /api/crawl`.
+This project provides an Azure Function (Python v2 programming model) with:
+- HTTP endpoints for disaster data and DB health checks
+- Timer-triggered data sync jobs
 
 ## Prerequisites
 
@@ -24,8 +24,7 @@ pip install -r requirements.txt
 
 ### 2. Configure local settings
 
-Copy `local.settings.json` and set the `TARGET_API_URL` value to the API you want
-to crawl by default:
+Copy `local.settings.json` and set required values:
 
 ```json
 {
@@ -33,7 +32,6 @@ to crawl by default:
   "Values": {
     "AzureWebJobsStorage": "UseDevelopmentStorage=true",
     "FUNCTIONS_WORKER_RUNTIME": "python",
-    "TARGET_API_URL": "https://your-target-api.com/endpoint",
     "POSTGRES_HOST": "your-server.postgres.database.azure.com",
     "POSTGRES_DB": "your_database",
     "POSTGRES_USER": "your_user",
@@ -51,14 +49,11 @@ to crawl by default:
 func start
 ```
 
-### 4. Invoke the function
+### 4. Invoke functions
 
 ```bash
-# Use the TARGET_API_URL environment variable
-curl http://localhost:7071/api/crawl
-
-# Override the target URL via query parameter
-curl "http://localhost:7071/api/crawl?url=https://api.example.com/data"
+# Get disasters by date
+curl "http://localhost:7071/api/disasters?date=2026-03-05"
 
 # Check PostgreSQL connectivity
 curl http://localhost:7071/api/db-health
@@ -66,7 +61,7 @@ curl http://localhost:7071/api/db-health
 
 ## Deployment
 
-Deploy to Azure using the Azure Functions Core Tools:
+Deploy to Azure using Azure Functions Core Tools:
 
 ```bash
 func azure functionapp publish <YOUR_FUNCTION_APP_NAME>
@@ -74,17 +69,17 @@ func azure functionapp publish <YOUR_FUNCTION_APP_NAME>
 
 ## Project Structure
 
-```
+```text
 .
-├── function_app.py       # Function app bootstrap (blueprint registration)
-├── endpoints/
-│   ├── main.py           # Main endpoint
-│   ├── crawl.py          # CrawlApi endpoint
-│   └── db_health.py      # DbHealth endpoint
-├── db/
-│   └── postgres_connector.py  # PostgreSQL connection helper
-├── host.json             # Azure Functions host configuration
-├── local.settings.json   # Local development settings (not committed to production)
-├── requirements.txt      # Python dependencies
-└── README.md
+|-- function_app.py
+|-- blueprint/
+|   |-- main.py
+|   |-- disasters.py
+|   `-- db_health.py
+|-- db/
+|   `-- postgres_connector.py
+|-- host.json
+|-- local.settings.json
+|-- requirements.txt
+`-- README.md
 ```
