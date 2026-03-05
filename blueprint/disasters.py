@@ -11,7 +11,7 @@ bp = func.Blueprint()
 
 
 @bp.function_name(name="Disasters")
-@bp.route(route="disasters", methods=["GET"])
+@bp.route(route="disasters", methods=["GET"], auth_level=func.AuthLevel.ANONYMOUS)
 def disasters(req: func.HttpRequest) -> func.HttpResponse:
     """HTTP trigger that returns disaster messages by date or date range."""
     date = req.params.get("date")

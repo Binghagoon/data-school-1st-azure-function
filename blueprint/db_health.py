@@ -8,7 +8,7 @@ bp = func.Blueprint()
 
 
 @bp.function_name(name="DbHealth")
-@bp.route(route="db-health", methods=["GET"])
+@bp.route(route="db-health", methods=["GET"], auth_level=func.AuthLevel.ANONYMOUS)
 def db_health(req: func.HttpRequest) -> func.HttpResponse:
     """HTTP trigger function that checks PostgreSQL connectivity."""
     try:

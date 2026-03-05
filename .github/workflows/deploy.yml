@@ -1,0 +1,56 @@
+name: Deploy Azure Functions (Python v2)
+
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: functionapp-deploy-main
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: "3.10"
+  FUNCTIONAPP_NAME: "3dt-1st-project-4th-fx"
+  PACKAGE_PATH: "."
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Validate publish profile secret
+        env:
+          AZURE_FUNCTIONAPP_PUBLISH_PROFILE: ${{ secrets.AZURE_FUNCTIONAPP_PUBLISH_PROFILE }}
+        run: |
+          if [ -z "$AZURE_FUNCTIONAPP_PUBLISH_PROFILE" ]; then
+            echo "AZURE_FUNCTIONAPP_PUBLISH_PROFILE secret is missing."
+            exit 1
+          fi
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      # (선택) 유닛 테스트 등이 있다면 여기에 추가
+
+      - name: Deploy to Azure Functions
+        uses: Azure/functions-action@v1
+        with:
+          app-name: ${{ env.FUNCTIONAPP_NAME }}
+          package: ${{ env.PACKAGE_PATH }}
+          publish-profile: ${{ secrets.AZURE_FUNCTIONAPP_PUBLISH_PROFILE }}
+          scm-do-build-during-deployment: true
+          enable-oryx-build: true
