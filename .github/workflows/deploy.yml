@@ -5,6 +5,18 @@ on:
     branches: ["main"]
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: functionapp-deploy-main
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: "3.10"
+  FUNCTIONAPP_NAME: "3dt-1st-project-4th-fx"
+  PACKAGE_PATH: "."
+
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
@@ -16,7 +28,13 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.10"
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Validate publish profile secret
+        if: ${{ secrets.AZURE_FUNCTIONAPP_PUBLISH_PROFILE == '' }}
+        run: |
+          echo "AZURE_FUNCTIONAPP_PUBLISH_PROFILE secret is missing."
+          exit 1
 
       - name: Install dependencies
         run: |
@@ -28,6 +46,8 @@ jobs:
       - name: Deploy to Azure Functions
         uses: Azure/functions-action@v1
         with:
-          app-name: 3dt-1st-project-4th-fx
-          package: .
+          app-name: ${{ env.FUNCTIONAPP_NAME }}
+          package: ${{ env.PACKAGE_PATH }}
           publish-profile: ${{ secrets.AZURE_FUNCTIONAPP_PUBLISH_PROFILE }}
+          scm-do-build-during-deployment: true
+          enable-oryx-build: true
