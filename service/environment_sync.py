@@ -257,7 +257,10 @@ def run_environment(conn):
                 avg_temp   = EXCLUDED.avg_temp,  max_temp   = EXCLUDED.max_temp,
                 min_temp   = EXCLUDED.min_temp,  avg_humi   = EXCLUDED.avg_humi,
                 avg_wind   = EXCLUDED.avg_wind,  total_rain = EXCLUDED.total_rain,
-                avg_pm10   = EXCLUDED.avg_pm10,  avg_pm25   = EXCLUDED.avg_pm25,
+                avg_pm10   = CASE WHEN EXCLUDED.avg_pm10 IS NOT NULL THEN EXCLUDED.avg_pm10
+                                  ELSE gold.environment_hourly.avg_pm10 END,
+                avg_pm25   = CASE WHEN EXCLUDED.avg_pm25 IS NOT NULL THEN EXCLUDED.avg_pm25
+                                  ELSE gold.environment_hourly.avg_pm25 END,
                 air_grade  = EXCLUDED.air_grade, pty        = EXCLUDED.pty
             """
         )
@@ -282,13 +285,41 @@ def run_environment(conn):
                 avg_temp   = EXCLUDED.avg_temp,  max_temp   = EXCLUDED.max_temp,
                 min_temp   = EXCLUDED.min_temp,  avg_humi   = EXCLUDED.avg_humi,
                 total_rain = EXCLUDED.total_rain,
-                avg_pm10   = EXCLUDED.avg_pm10,  avg_pm25   = EXCLUDED.avg_pm25
+                avg_pm10   = CASE WHEN EXCLUDED.avg_pm10 IS NOT NULL THEN EXCLUDED.avg_pm10
+                                  ELSE gold.environment_daily.avg_pm10 END,
+                avg_pm25   = CASE WHEN EXCLUDED.avg_pm25 IS NOT NULL THEN EXCLUDED.avg_pm25
+                                  ELSE gold.environment_daily.avg_pm25 END
             """
         )
         daily = cur.rowcount
+
+        # ── 하루종일 점검중인 경우만 앞뒤 날짜로 보간 ──────────
+        cur.execute(
+            """
+            UPDATE gold.environment_daily g
+            SET
+                avg_pm10 = COALESCE(g.avg_pm10, i.interp_pm10, i.lag_pm10),
+                avg_pm25 = COALESCE(g.avg_pm25, i.interp_pm25, i.lag_pm25)
+            FROM (
+                SELECT
+                    dist_name, measured_date,
+                    (LAG(avg_pm10) OVER w + LEAD(avg_pm10) OVER w) / 2 AS interp_pm10,
+                     LAG(avg_pm10) OVER w                               AS lag_pm10,
+                    (LAG(avg_pm25) OVER w + LEAD(avg_pm25) OVER w) / 2 AS interp_pm25,
+                     LAG(avg_pm25) OVER w                               AS lag_pm25
+                FROM gold.environment_daily
+                WINDOW w AS (PARTITION BY dist_name ORDER BY measured_date)
+            ) i
+            WHERE g.dist_name = i.dist_name
+              AND g.measured_date = i.measured_date
+              AND (g.avg_pm10 IS NULL OR g.avg_pm25 IS NULL)
+            """
+        )
+        interpolated = cur.rowcount
+
     conn.commit()
     log_pipeline(conn, "gold", "environment", "SUCCESS", silver_count, time.time() - t)
-    logger.info(f"[환경-골드] 시간별 {hourly}건 / 일별 {daily}건 집계 완료")
+    logger.info(f"[환경-골드] 시간별 {hourly}건 / 일별 {daily}건 / 보간 {interpolated}건 완료")
     logger.info(f"[환경] 파이프라인 완료 (총 {round(time.time() - start, 2)}초)")
 
 
