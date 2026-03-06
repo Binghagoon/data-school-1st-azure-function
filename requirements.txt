@@ -1,5 +1,6 @@
 azure-functions
 requests
 beautifulsoup4
-psycopg[binary]
+psycopg2-binary
+aiohttp
 python-dotenv
