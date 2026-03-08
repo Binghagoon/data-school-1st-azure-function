@@ -3,6 +3,7 @@ import logging
 import sys
 from dotenv import load_dotenv
 
+from blueprint.api import bp as api_bp
 from blueprint.bronze import bp as bronze_bp
 from blueprint.db_health import bp as db_health_bp
 from blueprint.disasters import bp as disasters_bp
@@ -15,6 +16,7 @@ from service.shelter_sync import main_shelter
 
 app = func.FunctionApp(http_auth_level=func.AuthLevel.ANONYMOUS)
 
+app.register_blueprint(api_bp)
 app.register_blueprint(main_bp)
 app.register_blueprint(db_health_bp)
 app.register_blueprint(disasters_bp)
