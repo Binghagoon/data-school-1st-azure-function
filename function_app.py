@@ -3,6 +3,7 @@ import logging
 import sys
 from dotenv import load_dotenv
 
+from blueprint.bronze import bp as bronze_bp
 from blueprint.db_health import bp as db_health_bp
 from blueprint.disasters import bp as disasters_bp
 from blueprint.main import bp as main_bp
@@ -18,6 +19,7 @@ app.register_blueprint(main_bp)
 app.register_blueprint(db_health_bp)
 app.register_blueprint(disasters_bp)
 app.register_blueprint(timestamps_bp)
+app.register_blueprint(bronze_bp)
 
 load_dotenv()
 
