@@ -2,6 +2,18 @@
   "version": "0.2.0",
   "configurations": [
     {
+      "name": "Debug function_app.py (.env from folder)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/function_app.py",
+      "console": "integratedTerminal",
+      "justMyCode": false,
+      "envFile": "${workspaceFolder}/.env",
+      "args": [
+        "${input:runTarget}"
+      ]
+    },
+    {
       "name": "Attach to Azure Functions (Python)",
       "type": "debugpy",
       "request": "attach",
@@ -11,6 +23,20 @@
       },
       "justMyCode": true,
       "preLaunchTask": "func: host start"
+    }
+  ],
+  "inputs": [
+    {
+      "id": "runTarget",
+      "type": "pickString",
+      "description": "function_app.py argument",
+      "options": [
+        "all",
+        "shelter",
+        "env",
+        "forecast"
+      ],
+      "default": "all"
     }
   ]
 }
