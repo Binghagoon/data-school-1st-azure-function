@@ -3,6 +3,8 @@ from datetime import datetime, timedelta, timezone
 
 import azure.functions as func
 
+from service.shelter_sync import get_shelters
+
 bp = func.Blueprint()
 _count = 0
 
@@ -60,3 +62,27 @@ def api_count(req: func.HttpRequest) -> func.HttpResponse:
     return func.HttpResponse(
         json.dumps(body), status_code=200, mimetype="application/json"
     )
+
+
+@bp.function_name(name="ApiShelters")
+@bp.route(route="api/shelters", methods=["GET"], auth_level=func.AuthLevel.ANONYMOUS)
+def api_shelters(req: func.HttpRequest) -> func.HttpResponse:
+    raw_limit = req.params.get("limit")
+    limit: int | None = None
+    if raw_limit is not None:
+        try:
+            limit = int(raw_limit)
+        except ValueError:
+            return func.HttpResponse("limit must be an integer", status_code=400)
+        if limit <= 0:
+            return func.HttpResponse("limit must be greater than 0", status_code=400)
+
+    try:
+        shelters = get_shelters(limit=limit)
+        return func.HttpResponse(
+            json.dumps(shelters, ensure_ascii=False),
+            status_code=200,
+            mimetype="application/json",
+        )
+    except Exception as exc:
+        return func.HttpResponse(f"Failed to fetch shelters: {exc}", status_code=500)
