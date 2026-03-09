@@ -10,64 +10,9 @@ bp = func.Blueprint()
 _count = 0
 
 
-# (상대방 프로젝트에 원래 있던 기본 API들은 그대로 유지합니다)
-@bp.function_name(name="ApiRoot")
-@bp.route(route="/", methods=["GET"], auth_level=func.AuthLevel.ANONYMOUS)
-def api_root(req: func.HttpRequest) -> func.HttpResponse:
-    body = {"message": "API is running"}
-    return func.HttpResponse(
-        json.dumps(body), status_code=200, mimetype="application/json"
-    )
-
-
-@bp.function_name(name="ApiNowTime")
-@bp.route(route="/now-time", methods=["GET"], auth_level=func.AuthLevel.ANONYMOUS)
-def api_now_time(req: func.HttpRequest) -> func.HttpResponse:
-    now_utc = datetime.now(timezone.utc)
-    kst = timezone(timedelta(hours=9))
-    now_kst = now_utc.astimezone(kst)
-    body = {
-        "now_time_utc": now_utc.isoformat(),
-        "now_time_kst": now_kst.isoformat(),
-        "utc": {
-            "year": now_utc.year,
-            "month": now_utc.month,
-            "day": now_utc.day,
-            "hour": now_utc.hour,
-            "minute": now_utc.minute,
-            "second": now_utc.second,
-            "microsecond": now_utc.microsecond,
-            "offset": "+00:00",
-        },
-        "kst": {
-            "year": now_kst.year,
-            "month": now_kst.month,
-            "day": now_kst.day,
-            "hour": now_kst.hour,
-            "minute": now_kst.minute,
-            "second": now_kst.second,
-            "microsecond": now_kst.microsecond,
-            "offset": "+09:00",
-        },
-    }
-    return func.HttpResponse(
-        json.dumps(body), status_code=200, mimetype="application/json"
-    )
-
-
-@bp.function_name(name="ApiCount")
-@bp.route(route="/count", methods=["GET"], auth_level=func.AuthLevel.ANONYMOUS)
-def api_count(req: func.HttpRequest) -> func.HttpResponse:
-    global _count
-    _count += 1
-    body = {"count": _count}
-    return func.HttpResponse(
-        json.dumps(body), status_code=200, mimetype="application/json"
-    )
-
 
 @bp.function_name(name="ApiShelters")
-@bp.route(route="/shelters", methods=["GET"], auth_level=func.AuthLevel.ANONYMOUS)
+@bp.route(route="shelters", methods=["GET"], auth_level=func.AuthLevel.ANONYMOUS)
 def api_shelters(req: func.HttpRequest) -> func.HttpResponse:
     raw_limit = req.params.get("limit")
     limit: int | None = None
@@ -98,7 +43,7 @@ def api_shelters(req: func.HttpRequest) -> func.HttpResponse:
 
 # [기능 1] 회원가입: 데이터를 DB에 저장!
 @bp.function_name(name="ApiSignup")
-@bp.route(route="/signup", methods=["POST"], auth_level=func.AuthLevel.ANONYMOUS)
+@bp.route(route="signup", methods=["POST"], auth_level=func.AuthLevel.ANONYMOUS)
 def api_signup(req: func.HttpRequest) -> func.HttpResponse:
     try:
         data = req.get_json()
@@ -140,7 +85,7 @@ def api_signup(req: func.HttpRequest) -> func.HttpResponse:
 
 # [기능 2] 로그인 (기존 코드 유지)
 @bp.function_name(name="ApiLogin")
-@bp.route(route="/login", methods=["POST"], auth_level=func.AuthLevel.ANONYMOUS)
+@bp.route(route="login", methods=["POST"], auth_level=func.AuthLevel.ANONYMOUS)
 def api_login(req: func.HttpRequest) -> func.HttpResponse:
     try:
         data = req.get_json()
