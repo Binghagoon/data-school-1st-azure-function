@@ -1,10 +1,12 @@
 import json
 import decimal
 from datetime import datetime, timedelta, timezone
-
 import azure.functions as func
 from service.shelter_sync import get_shelters
 import pg8000.dbapi
+from db.postgres_connector import get_connection
+from service.shelter_sync import get_shelters
+
 
 # Decimal 처리를 위한 커스텀 JSON 인코더
 class DecimalEncoder(json.JSONEncoder):
@@ -12,7 +14,7 @@ class DecimalEncoder(json.JSONEncoder):
         if isinstance(obj, decimal.Decimal):
             return float(obj)
         return super(DecimalEncoder, self).default(obj)
-
+        
 bp = func.Blueprint()
 _count = 0
 
@@ -24,28 +26,9 @@ def api_root(req: func.HttpRequest) -> func.HttpResponse:
         json.dumps(body), status_code=200, mimetype="application/json"
     )
 
-@bp.function_name(name="ApiNowTime")
-@bp.route(route="api/now-time", methods=["GET"], auth_level=func.AuthLevel.ANONYMOUS)
-def api_now_time(req: func.HttpRequest) -> func.HttpResponse:
-    now_utc = datetime.now(timezone.utc)
-    kst = timezone(timedelta(hours=9))
-    now_kst = now_utc.astimezone(kst)
-    body = {
-        "now_time_utc": now_utc.isoformat(),
-        "now_time_kst": now_kst.isoformat(),
-    }
-    return func.HttpResponse(json.dumps(body), status_code=200, mimetype="application/json")
-
-@bp.function_name(name="ApiCount")
-@bp.route(route="api/count", methods=["GET"], auth_level=func.AuthLevel.ANONYMOUS)
-def api_count(req: func.HttpRequest) -> func.HttpResponse:
-    global _count
-    _count += 1
-    body = {"count": _count}
-    return func.HttpResponse(json.dumps(body), status_code=200, mimetype="application/json")
 
 @bp.function_name(name="ApiShelters")
-@bp.route(route="api/shelters", methods=["GET"], auth_level=func.AuthLevel.ANONYMOUS)
+@bp.route(route="shelters", methods=["GET"], auth_level=func.AuthLevel.ANONYMOUS)
 def api_shelters(req: func.HttpRequest) -> func.HttpResponse:
     raw_limit = req.params.get("limit")
     limit: int | None = None
@@ -54,75 +37,90 @@ def api_shelters(req: func.HttpRequest) -> func.HttpResponse:
             limit = int(raw_limit)
         except ValueError:
             return func.HttpResponse("limit must be an integer", status_code=400)
+        if limit <= 0:
+            return func.HttpResponse("limit must be greater than 0", status_code=400)
+
     try:
         shelters = get_shelters(limit=limit)
-        return func.HttpResponse(json.dumps(shelters, ensure_ascii=False), status_code=200, mimetype="application/json")
+        return func.HttpResponse(
+            json.dumps(shelters, ensure_ascii=False),
+            status_code=200,
+            mimetype="application/json",
+        )
     except Exception as exc:
         return func.HttpResponse(f"Failed to fetch shelters: {exc}", status_code=500)
 
-# DB 접속 정보
-DB_CONFIG = {
-    "host": "team4-db.postgres.database.azure.com",
-    "database": "postgres",
-    "user": "azure_root",
-    "password": "qwer1234!",
-    "port": 5432
-}
 
-def get_conn():
-    return pg8000.dbapi.connect(**DB_CONFIG)
+# ═══════════════════════════════════════════
+# 🌟 심 팀장님 오리지널 코드 이식 (로그인 / 회원가입)
+# ═══════════════════════════════════════════
+
+
 
 @bp.function_name(name="ApiSignup")
-@bp.route(route="api/signup", methods=["POST"], auth_level=func.AuthLevel.ANONYMOUS)
+@bp.route(route="signup", methods=["POST"], auth_level=func.AuthLevel.ANONYMOUS)
 def api_signup(req: func.HttpRequest) -> func.HttpResponse:
     try:
         data = req.get_json()
-        conn = get_conn()
+        conn = get_connection()
         cursor = conn.cursor()
         
+
+        # 스크린샷의 users 테이블 컬럼명과 정확히 일치시켰습니다.
         query = """
             INSERT INTO users (userid, password, name, address, birthyear)
             VALUES (%s, %s, %s, %s, %s)
         """
-        cursor.execute(query, (
-            data['userid'], 
-            data['password'], 
-            data['name'], 
-            data['address'], 
-            int(data['birthyear'])
-        ))
-        
+        cursor.execute(
+            query,
+            (
+                data["userid"],
+                data["password"],
+                data["name"],
+                data["address"],
+                int(data["birthyear"]),
+            ),
+        )
+
         conn.commit()
         cursor.close()
         conn.close()
-        
+
         return func.HttpResponse(
             body=json.dumps({"message": "가입을 환영합니다!"}),
-            mimetype="application/json", status_code=200
+            mimetype="application/json",
+            status_code=200,
         )
     except Exception as e:
         return func.HttpResponse(
             body=json.dumps({"detail": f"가입 실패: {str(e)}"}),
-            mimetype="application/json", status_code=500
+            mimetype="application/json",
+            status_code=500,
         )
 
 @bp.function_name(name="ApiLogin")
-@bp.route(route="api/login", methods=["POST"], auth_level=func.AuthLevel.ANONYMOUS)
+@bp.route(route="login", methods=["POST"], auth_level=func.AuthLevel.ANONYMOUS)
 def api_login(req: func.HttpRequest) -> func.HttpResponse:
     try:
         data = req.get_json()
-        conn = get_conn()
+        conn = get_connection()
         cursor = conn.cursor()
         query = "SELECT name FROM users WHERE userid = %s AND password = %s"
-        cursor.execute(query, (data['userid'], data['password']))
+        cursor.execute(query, (data["userid"], data["password"]))
         result = cursor.fetchone()
         cursor.close()
         conn.close()
 
         if result:
-            return func.HttpResponse(body=json.dumps({"username": result[0]}), mimetype="application/json")
+            return func.HttpResponse(
+                body=json.dumps({"username": result[0]}), mimetype="application/json"
+            )
         else:
-            return func.HttpResponse(body=json.dumps({"detail": "정보 불일치"}), mimetype="application/json", status_code=401)
+            return func.HttpResponse(
+                body=json.dumps({"detail": "정보 불일치"}),
+                mimetype="application/json",
+                status_code=401,
+            )
     except Exception as e:
         return func.HttpResponse(body=json.dumps({"detail": str(e)}), mimetype="application/json", status_code=500)
 
@@ -217,3 +215,8 @@ def api_weather_tomorrow(req: func.HttpRequest) -> func.HttpResponse:
     finally:
         if cursor: cursor.close()
         if conn: conn.close()
+        return func.HttpResponse(
+            body=json.dumps({"detail": str(e)}),
+            mimetype="application/json",
+            status_code=500,
+        )
