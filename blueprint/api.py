@@ -12,7 +12,7 @@ _count = 0
 
 # (상대방 프로젝트에 원래 있던 기본 API들은 그대로 유지합니다)
 @bp.function_name(name="ApiRoot")
-@bp.route(route="api", methods=["GET"], auth_level=func.AuthLevel.ANONYMOUS)
+@bp.route(route="/", methods=["GET"], auth_level=func.AuthLevel.ANONYMOUS)
 def api_root(req: func.HttpRequest) -> func.HttpResponse:
     body = {"message": "API is running"}
     return func.HttpResponse(
@@ -21,7 +21,7 @@ def api_root(req: func.HttpRequest) -> func.HttpResponse:
 
 
 @bp.function_name(name="ApiNowTime")
-@bp.route(route="api/now-time", methods=["GET"], auth_level=func.AuthLevel.ANONYMOUS)
+@bp.route(route="/now-time", methods=["GET"], auth_level=func.AuthLevel.ANONYMOUS)
 def api_now_time(req: func.HttpRequest) -> func.HttpResponse:
     now_utc = datetime.now(timezone.utc)
     kst = timezone(timedelta(hours=9))
@@ -56,7 +56,7 @@ def api_now_time(req: func.HttpRequest) -> func.HttpResponse:
 
 
 @bp.function_name(name="ApiCount")
-@bp.route(route="api/count", methods=["GET"], auth_level=func.AuthLevel.ANONYMOUS)
+@bp.route(route="/count", methods=["GET"], auth_level=func.AuthLevel.ANONYMOUS)
 def api_count(req: func.HttpRequest) -> func.HttpResponse:
     global _count
     _count += 1
@@ -67,7 +67,7 @@ def api_count(req: func.HttpRequest) -> func.HttpResponse:
 
 
 @bp.function_name(name="ApiShelters")
-@bp.route(route="api/shelters", methods=["GET"], auth_level=func.AuthLevel.ANONYMOUS)
+@bp.route(route="/shelters", methods=["GET"], auth_level=func.AuthLevel.ANONYMOUS)
 def api_shelters(req: func.HttpRequest) -> func.HttpResponse:
     raw_limit = req.params.get("limit")
     limit: int | None = None
@@ -98,7 +98,7 @@ def api_shelters(req: func.HttpRequest) -> func.HttpResponse:
 
 # [기능 1] 회원가입: 데이터를 DB에 저장!
 @bp.function_name(name="ApiSignup")
-@bp.route(route="api/signup", methods=["POST"], auth_level=func.AuthLevel.ANONYMOUS)
+@bp.route(route="/signup", methods=["POST"], auth_level=func.AuthLevel.ANONYMOUS)
 def api_signup(req: func.HttpRequest) -> func.HttpResponse:
     try:
         data = req.get_json()
@@ -140,7 +140,7 @@ def api_signup(req: func.HttpRequest) -> func.HttpResponse:
 
 # [기능 2] 로그인 (기존 코드 유지)
 @bp.function_name(name="ApiLogin")
-@bp.route(route="api/login", methods=["POST"], auth_level=func.AuthLevel.ANONYMOUS)
+@bp.route(route="/login", methods=["POST"], auth_level=func.AuthLevel.ANONYMOUS)
 def api_login(req: func.HttpRequest) -> func.HttpResponse:
     try:
         data = req.get_json()
