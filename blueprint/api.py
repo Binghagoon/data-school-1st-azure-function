@@ -5,6 +5,10 @@ import azure.functions as func
 
 from service.shelter_sync import get_shelters
 
+import pg8000.native
+import requests
+import os
+
 bp = func.Blueprint()
 _count = 0
 
@@ -86,3 +90,62 @@ def api_shelters(req: func.HttpRequest) -> func.HttpResponse:
         )
     except Exception as exc:
         return func.HttpResponse(f"Failed to fetch shelters: {exc}", status_code=500)
+
+@bp.function_name(name="ApiLogin")
+@bp.route(route="api/login", methods=["POST"], auth_level=func.AuthLevel.ANONYMOUS)
+def api_login(req: func.HttpRequest) -> func.HttpResponse:
+    try:
+        req_body = req.get_json()
+        user_id = req_body.get('id')
+        user_pw = req_body.get('password')
+
+        # DB 연결 (환경변수 사용 추천)
+        conn = pg8000.native.Connection(
+            user=os.getenv("DB_USER"),
+            password=os.getenv("DB_PASSWORD"),
+            host=os.getenv("DB_HOST"),
+            database=os.getenv("DB_NAME", "postgres"),
+            port=5432
+        )
+
+        # 사용자 조회 쿼리
+        user = conn.run("SELECT name FROM users WHERE id = :id AND password = :pw", id=user_id, pw=user_pw)
+
+        if user:
+            return func.HttpResponse(json.dumps({"status": "success", "name": user[0][0]}), mimetype="application/json")
+        else:
+            return func.HttpResponse(json.dumps({"status": "fail", "message": "ID 또는 비밀번호가 틀립니다."}), status_code=401)
+
+    except Exception as e:
+        return func.HttpResponse(f"Login Error: {e}", status_code=500)
+
+# [기능 2] 회원가입 API
+@bp.function_name(name="ApiSignup")
+@bp.route(route="api/signup", methods=["POST"], auth_level=func.AuthLevel.ANONYMOUS)
+def api_signup(req: func.HttpRequest) -> func.HttpResponse:
+    try:
+        req_body = req.get_json()
+        # ... 회원가입 정보 추출 및 DB INSERT 로직 ...
+        return func.HttpResponse(json.dumps({"message": "회원가입 성공"}), status_code=201)
+    except Exception as e:
+        return func.HttpResponse(f"Signup Error: {e}", status_code=500)
+
+# [기능 3] 실시간 날씨 API
+@bp.function_name(name="ApiWeather")
+@bp.route(route="api/weather", methods=["GET"], auth_level=func.AuthLevel.ANONYMOUS)
+def api_weather(req: func.HttpRequest) -> func.HttpResponse:
+    # 서울 날씨 오픈 API 호출
+    url = "https://api.open-meteo.com/v1/forecast?latitude=37.5665&longitude=126.9780&current_weather=true"
+    try:
+        response = requests.get(url)
+        data = response.json()
+        current = data['current_weather']
+        
+        body = {
+            "temp": round(current['temperature']),
+            "status": "맑음" if current['weathercode'] <= 3 else "흐림",
+            "msg": "실시간 기상 데이터 연동 성공!"
+        }
+        return func.HttpResponse(json.dumps(body), mimetype="application/json")
+    except Exception as e:
+        return func.HttpResponse(f"Weather Error: {e}", status_code=500)
