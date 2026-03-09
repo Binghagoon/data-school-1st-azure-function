@@ -28,7 +28,7 @@ class ShelterSchema(TypedDict):
     addr: str | None
     capacity: float | int | None
     lon: float
-    lat: float
+    lng: float
 
 
 # ═══════════════════════════════════════════
@@ -543,7 +543,7 @@ def get_shelters(limit: int | None = None) -> list[ShelterSchema]:
                 "name": r[1],
                 "addr": r[2],
                 "capacity": r[3],
-                "lon": float(r[4]),
+                "lng": float(r[4]),
                 "lat": float(r[5]),
             }
             for r in cur.fetchall()
