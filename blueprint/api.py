@@ -64,7 +64,7 @@ def api_count(req: func.HttpRequest) -> func.HttpResponse:
     )
 
 
-@bp.function_name(name="ApiShelters")
+@b p.function_name(name="ApiShelters")
 @bp.route(route="api/shelters", methods=["GET"], auth_level=func.AuthLevel.ANONYMOUS)
 def api_shelters(req: func.HttpRequest) -> func.HttpResponse:
     raw_limit = req.params.get("limit")
