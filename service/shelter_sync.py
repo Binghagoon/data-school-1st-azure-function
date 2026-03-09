@@ -23,9 +23,9 @@ from service.data_sync_common import (
 
 
 class ShelterSchema(TypedDict):
-    shelter_type: str
-    shelter_name: str
-    road_addr: str | None
+    type: str
+    name: str
+    addr: str | None
     capacity: float | int | None
     lon: float
     lat: float
@@ -42,8 +42,8 @@ def parse_heat_row(r: dict) -> tuple:
         clean_bpchar(r.get("AREA_CD"), 10),
         clean_str(r.get("FACILITY_TYPE1"), 50),
         clean_str(r.get("FACILITY_TYPE2"), 50),
-        clean_str(r.get("R_AREA_NM"), 100),  # shelter_name
-        clean_str(r.get("R_DETL_ADD"), 200),  # road_addr
+        clean_str(r.get("R_AREA_NM"), 100),  # name
+        clean_str(r.get("R_DETL_ADD"), 200),  # addr
         clean_str(r.get("LOTNO_ADDR"), 200),
         clean_float(r.get("R_AREA_SQR")),  # facility_area FLOAT8
         clean_float(r.get("USE_PRNB")),  # capacity      FLOAT8
@@ -539,9 +539,9 @@ def get_shelters(limit: int | None = None) -> list[ShelterSchema]:
             )
         shelters = [
             {
-                "shelter_type": r[0],
-                "shelter_name": r[1],
-                "road_addr": r[2],
+                "type": r[0],
+                "name": r[1],
+                "addr": r[2],
                 "capacity": r[3],
                 "lon": float(r[4]),
                 "lat": float(r[5]),
