@@ -260,3 +260,53 @@ def api_user_address(req: func.HttpRequest) -> func.HttpResponse:
     finally:
         if cursor: cursor.close()
         if conn: conn.close()
+
+@bp.function_name(name="ApiWeatherToday")
+@bp.route(route="weather/today", methods=["GET"], auth_level=func.AuthLevel.ANONYMOUS)
+def api_weather_today(req: func.HttpRequest) -> func.HttpResponse:
+    district = req.params.get("district")
+    if not district:
+        return func.HttpResponse(json.dumps({"detail": "district 파라미터가 필요합니다."}, ensure_ascii=False), status_code=400, mimetype="application/json")
+
+    conn = None
+    cursor = None
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        kst = timezone(timedelta(hours=9))
+        today_kst = datetime.now(kst)
+        target_date = today_kst.strftime("%Y%m%d")  # 오늘 날짜
+
+        cursor.execute("""
+            SELECT id, dist_name, fcst_date, fcst_time, "temp", humi, pop, rain, created_at, snow, pty
+            FROM silver.weather_forecast_cleaned
+            WHERE dist_name = %s AND fcst_date = %s
+            ORDER BY fcst_time ASC
+        """, (district, target_date))
+        
+        rows = cursor.fetchall()
+        forecast_list = []
+        for row in rows:
+            forecast_list.append({
+                "id": row[0], "dist_name": row[1], "fcst_date": row[2], "fcst_time": row[3],
+                "temp": row[4], "humi": row[5], "pop": row[6], "rain": row[7],
+                "created_at": str(row[8]), "snow": row[9], "pty": row[10]
+            })
+
+        result = {
+            "district": district,
+            "target_date": target_date,
+            "count": len(forecast_list),
+            "forecasts": forecast_list
+        }
+
+        return func.HttpResponse(
+            json.dumps(result, ensure_ascii=False, cls=DecimalEncoder), 
+            status_code=200, 
+            mimetype="application/json"
+        )
+    except Exception as e:
+        return func.HttpResponse(json.dumps({"detail": f"DB 조회 에러: {str(e)}"}, ensure_ascii=False), status_code=500, mimetype="application/json")
+    finally:
+        if cursor: cursor.close()
+        if conn: conn.close()
