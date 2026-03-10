@@ -1,6 +1,7 @@
 import os
 from time import time
 import requests
+import json
 
 
 def _get_required_env(name: str) -> str:
@@ -65,8 +66,6 @@ URL = _get_required_env("WEBHOOK_URL")
 # 안전안내	Moderate / Informational	ℹ️
 
 
-import time
-
 
 def build_body(type: str, title: str, facts: dict[str, str], message: str) -> dict:
     if type == "긴급재난":
@@ -117,11 +116,10 @@ def send_webhook(type: str, title: str, facts: dict[str, str], message: str) -> 
 
     body = build_body(type, title, facts, message)
     headers = {"Content-Type": "application/json"}
-    import json
 
     print("Sending webhook with body:", json.dumps(body, ensure_ascii=False, indent=2))
-    # response = requests.post(URL, json=body, headers=headers)
-    # response.raise_for_status()
+    response = requests.post(URL, json=body, headers=headers)
+    response.raise_for_status()
 
 
 if __name__ == "__main__":

@@ -2,7 +2,7 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Debug function_app.py (.env from folder)",
+      "name": "Run function_app.py script (no Functions host)",
       "type": "debugpy",
       "request": "launch",
       "program": "${workspaceFolder}/function_app.py",
@@ -14,7 +14,7 @@
       ]
     },
     {
-      "name": "Attach to Azure Functions (Python)",
+      "name": "Debug Azure Functions host (timer/http)",
       "type": "debugpy",
       "request": "attach",
       "connect": {
