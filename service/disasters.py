@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from typing import Any
 
 import requests
@@ -8,10 +8,12 @@ import json
 
 from db.postgres_connector import get_connection
 from db.sql_debug import render_sql_for_log
+from service.webhook import send_webhook
 
 
 URL = "https://www.safekorea.go.kr/idsiSFK/sfk/cs/sua/web/DisasterSmsList.do"
 HEADERS = {"Content-Type": "application/json"}
+KST = timezone(timedelta(hours=9))
 
 
 def _validate_date(value: str) -> str:
@@ -91,7 +93,10 @@ def get_disasters(date: str | dict[str, str]) -> list[dict[str, Any]]:
     return get_disaster(date)
 
 
-def save_disasters(disasters: list[dict[str, Any]]) -> None:
+def save_disasters(
+    disasters: list[dict[str, Any]],
+    override: bool = False,
+) -> tuple[tuple["not saved", int], dict[str, Any]]:
     """Placeholder function to save disasters to a database or file."""
     with get_connection() as connection:
         with connection.cursor() as cursor:
@@ -99,13 +104,19 @@ def save_disasters(disasters: list[dict[str, Any]]) -> None:
                 "SELECT md101_sn FROM disaster_messages ORDER BY md101_sn;"
             )
             ids = set(id for (id,) in ids_query.fetchall())
-            print(ids)
-            saved_count = 0
+            not_saved = []
+            saved_disasters = []
             for disaster in disasters:
                 id = disaster.get("MD101_SN")
                 if id in ids:
-                    print(f"Skipping existing disaster with MD101_SN={id}")
-                    continue
+                    if not override:
+                        print(f"Skipping existing disaster with MD101_SN={id}")
+                        not_saved.append(id)
+                        continue
+                    else:
+                        print(f"Overriding existing disaster with MD101_SN={id}")
+                        query = "DELETE FROM disaster_messages WHERE md101_sn = %s"
+                        cursor.execute(query, (id,))
                 query = """
                     INSERT INTO disaster_messages (md101_sn, dsstr_se_id, dsstr_se_nm, msg_se_cd, msg_cn, rcv_area_id, rcv_area_nm, emrgncy_step_id, emrgncy_step_nm, delete_at, register_id, updusr_id, rnum, creat_dt, regist_dt, modf_dt)
                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
@@ -130,10 +141,49 @@ def save_disasters(disasters: list[dict[str, Any]]) -> None:
                 )
                 print(render_sql_for_log(query, params))
                 cursor.execute(query, params)
-                saved_count += 1
+                saved_disasters.append(disaster)
         connection.commit()
     # Implement actual saving logic here (e.g., write to a database or file)
-    print(f"Saving {saved_count} disasters... (not implemented)")
+    print(f"Saving {len(saved_disasters)} disasters...")
+    return ("not saved", len(not_saved)), saved_disasters
+
+
+def process_disaster_events(
+    date: str | dict[str, str] | None = None,
+    override: bool = False,
+    not_alert_to_teams: bool = False,
+) -> None:
+    if date is None:
+        date = datetime.now(KST).strftime("%Y-%m-%d")
+    elif isinstance(date, str):
+        _validate_date(date)
+    elif isinstance(date, dict):
+        _validate_date(date.get("start"))
+        _validate_date(date.get("end", datetime.now(KST).strftime("%Y-%m-%d")))
+
+    disasters = get_disaster(date)
+    (_, not_saved_count), saved_disasters = save_disasters(disasters, override=override)
+    print(f"Not saved disasters: {not_saved_count} out of {len(disasters)}")
+    print(f"Saved disasters: {len(saved_disasters)}")
+    if not_alert_to_teams:
+        print("Skipping Teams alert as not_alert_to_teams=True")
+        return
+    for disaster in saved_disasters:
+        title = disaster.get("DSSTR_SE_NM", "재난 발생")
+        facts = {
+            "재난 유형": disaster.get("DSSTR_SE_NM", ""),
+            "메시지 구분": disaster.get("MSG_SE_CD", ""),
+            "수신 지역": disaster.get("RCV_AREA_NM", ""),
+            "긴급 단계": disaster.get("EMRGNCY_STEP_NM", ""),
+            "발생 시각": disaster.get("CREAT_DT", ""),
+        }
+        message = disaster.get("MSG_CN", "")
+        send_webhook(
+            type=disaster.get("MSG_SE_CD", ""),
+            title=title,
+            facts=facts,
+            message=message,
+        )
 
 
 # Test code

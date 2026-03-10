@@ -2,7 +2,6 @@
 import logging
 import sys
 from dotenv import load_dotenv
-
 from blueprint.api import bp as api_bp
 from blueprint.bronze import bp as bronze_bp
 from blueprint.db_health import bp as db_health_bp
@@ -13,6 +12,7 @@ from service.environment_sync import main_environment
 from service.forecast_sync import main_forecast
 from service.hello_service import print_hello
 from service.shelter_sync import main_shelter
+from service.disasters import process_disaster_events
 
 app = func.FunctionApp(http_auth_level=func.AuthLevel.ANONYMOUS)
 
@@ -32,11 +32,11 @@ logging.basicConfig(
 
 @app.timer_trigger(
     schedule="*/1 * * * * *",  # every second
-    arg_name="hello_timer",
+    arg_name="getDisastersMessage",
     run_on_startup=False,
 )
-def hello_timer(hello_timer: func.TimerRequest) -> None:
-    print_hello()
+def get_disasters_message(getDisastersMessage: func.TimerRequest) -> None:
+    process_disaster_events()
 
 
 # ═══════════════════════════════════════════
@@ -85,6 +85,7 @@ def forecast_timer(forecast_timer: func.TimerRequest) -> None:
 # python function_app.py shelter   → 쉼터만
 # python function_app.py env       → 환경만
 # python function_app.py forecast  → 예보만
+# python function_app.py disasters → 재난만
 # ═══════════════════════════════════════════
 
 if __name__ == "__main__":
@@ -95,3 +96,5 @@ if __name__ == "__main__":
         main_environment()
     if target in ("forecast", "all"):
         main_forecast()
+    if target in ("disasters", "all"):
+        process_disaster_events()
