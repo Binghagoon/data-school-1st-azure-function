@@ -211,3 +211,52 @@ def api_weather_tomorrow(req: func.HttpRequest) -> func.HttpResponse:
         if cursor: cursor.close()
         if conn: conn.close()
         # 🌟 여기에 있던 불필요한 return 구문(충돌 찌꺼기)을 삭제했습니다!
+
+@bp.function_name(name="ApiUserAddress")
+@bp.route(route="user/address", methods=["GET"], auth_level=func.AuthLevel.ANONYMOUS)
+def api_user_address(req: func.HttpRequest) -> func.HttpResponse:
+    userid = req.params.get("userid")
+    if not userid:
+        return func.HttpResponse(
+            json.dumps({"detail": "userid 파라미터가 필요합니다."}, ensure_ascii=False),
+            status_code=400,
+            mimetype="application/json"
+        )
+    conn = None
+    cursor = None
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT id, userid, name, address
+            FROM public.users
+            WHERE userid = %s
+        """, (userid,))
+        
+        row = cursor.fetchone()
+        if not row:
+            return func.HttpResponse(
+                json.dumps({"detail": f"'{userid}' 유저를 찾을 수 없습니다."}, ensure_ascii=False),
+                status_code=404,
+                mimetype="application/json"
+            )
+        result = {
+            "id": row[0],
+            "userid": row[1],
+            "name": row[2],
+            "address": row[3]
+        }
+        return func.HttpResponse(
+            json.dumps(result, ensure_ascii=False),
+            status_code=200,
+            mimetype="application/json"
+        )
+    except Exception as e:
+        return func.HttpResponse(
+            json.dumps({"detail": f"DB 조회 에러: {str(e)}"}, ensure_ascii=False),
+            status_code=500,
+            mimetype="application/json"
+        )
+    finally:
+        if cursor: cursor.close()
+        if conn: conn.close()
