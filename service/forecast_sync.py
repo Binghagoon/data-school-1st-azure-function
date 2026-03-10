@@ -1,7 +1,7 @@
 import json
 import os
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import requests
 from psycopg2.extras import execute_values
@@ -17,6 +17,36 @@ from service.data_sync_common import (
     logger,
 )
 
+# ── KST 타임존 ──────────────────────────────────────────────────
+KST = timezone(timedelta(hours=9))
+
+
+def get_base_time(now_kst: datetime) -> str:
+    """
+    기상청 단기예보 발표 시각: 02, 05, 08, 11, 14, 17, 20, 23시
+    현재 KST 시각 기준으로 가장 최근 발표 시각 반환
+    (발표 후 약 10분 뒤 데이터 제공되므로 10분 여유 적용)
+    """
+    announce_hours = [2, 5, 8, 11, 14, 17, 20, 23]
+    current_minutes = now_kst.hour * 60 + now_kst.minute
+
+    available = [h for h in announce_hours if h * 60 + 10 <= current_minutes]
+
+    if not available:
+        # 자정~02:10 사이면 전날 23시 발표 기준
+        return "2300"
+
+    return f"{max(available):02d}00"
+
+
+def get_base_date(now_kst: datetime, base_time: str) -> str:
+    """
+    base_time이 2300이고 현재 시각이 자정~02:10 사이면 전날 날짜 반환
+    """
+    if base_time == "2300" and now_kst.hour < 3:
+        return (now_kst - timedelta(days=1)).strftime("%Y%m%d")
+    return now_kst.strftime("%Y%m%d")
+
 
 def run_weather_forecast(conn):
     logger.info("═" * 55)
@@ -24,10 +54,13 @@ def run_weather_forecast(conn):
     logger.info("═" * 55)
     start = time.time()
 
-    now           = datetime.now()
-    base_date     = now.strftime("%Y%m%d")
-    base_time     = "0500"
-    tomorrow_date = (now + timedelta(days=1)).strftime("%Y%m%d")
+    # ✅ KST 기준으로 날짜/시각 계산
+    now_kst       = datetime.now(KST)
+    base_time     = get_base_time(now_kst)
+    base_date     = get_base_date(now_kst, base_time)
+    tomorrow_date = (now_kst + timedelta(days=1)).strftime("%Y%m%d")
+
+    logger.info(f"[예보] KST 현재: {now_kst.strftime('%Y-%m-%d %H:%M')}")
     logger.info(f"[예보] 기준: {base_date} {base_time} → 내일({tomorrow_date}) 24시간 예보 수집")
 
     forecast_url = "http://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getVilageFcst"
@@ -48,6 +81,7 @@ def run_weather_forecast(conn):
                 res = requests.get(forecast_url, params=params, timeout=10)
                 res.raise_for_status()
                 items = res.json()["response"]["body"]["items"]["item"]
+                # ✅ KST 기준 내일 날짜 데이터만 필터링
                 tomorrow_items = [i for i in items if i["fcstDate"] == tomorrow_date]
                 all_raw.append({"dist_name": dist["name"], "items": tomorrow_items})
                 logger.info(f"[예보] {dist['name']}: {len(tomorrow_items)}건 수신")
@@ -166,7 +200,7 @@ def run_weather_forecast(conn):
 def main_forecast():
     logger.info("=" * 55)
     logger.info("  [예보] 파이프라인 시작")
-    logger.info(f"  실행 시각: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    logger.info(f"  실행 시각 (KST): {datetime.now(KST).strftime('%Y-%m-%d %H:%M:%S')}")
     logger.info("=" * 55)
 
     missing = [
